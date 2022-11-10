@@ -46,7 +46,9 @@
 
 #include "../include/ifaddrlist.h"
 
-#define MAX_IPADDR 512
+#define MAX_IP_ADDR 512
+#define IPADDR_INITIAL_BUFSIZE MAX_IP_ADDR
+#define IPADDR_GROW_FACTOR 1.5
 
 #if !(__WIN32__)
 
@@ -104,10 +106,20 @@ int
 libnet_ifaddrlist(register struct libnet_ifaddr_list **ipaddrp, char *dev, register char *errbuf)
 {
     (void)dev; /* unused */
-    static struct libnet_ifaddr_list ifaddrlist[MAX_IPADDR];
+    static struct libnet_ifaddr_list *ifaddrlist = NULL, *ifaddrlist_tmp = NULL;
+    static size_t ifaddrlist_len = 0;
     struct ifaddrs *ifap, *ifa;
     int i = 0;
-    memset (ifaddrlist, 0 , sizeof(ifaddrlist));
+
+    if (!ifaddrlist) {
+        ifaddrlist = calloc(IPADDR_INITIAL_BUFSIZE, sizeof(struct libnet_ifaddr_list));
+        if (!ifaddrlist) {
+            snprintf(errbuf, LIBNET_ERRBUF_SIZE, "%s(): OOM when allocating initial ifaddrlist", __func__);
+            return 0;
+        }
+
+        ifaddrlist_len = IPADDR_INITIAL_BUFSIZE;
+    }
 
     if (getifaddrs(&ifap) != 0)
     {
@@ -129,6 +141,17 @@ libnet_ifaddrlist(register struct libnet_ifaddr_list **ipaddrp, char *dev, regis
             }
             ifaddrlist[i].addr = ((struct sockaddr_in *)ifa->ifa_addr)->sin_addr.s_addr;
             ++i;
+        }
+
+        if (i == ifaddrlist_len) {
+            ifaddrlist_tmp = realloc(ifaddrlist, ifaddrlist_len * IPADDR_GROW_FACTOR);
+            if (!ifaddrlist_tmp) {
+                snprintf(errbuf, LIBNET_ERRBUF_SIZE, "%s(): OOM when reallocating larger ifaddrlist", __func__);
+                break;
+            }
+
+            ifaddrlist = ifaddrlist_tmp;
+            ifaddrlist_len = ifaddrlist_len * IPADDR_GROW_FACTOR;
         }
     }
 
